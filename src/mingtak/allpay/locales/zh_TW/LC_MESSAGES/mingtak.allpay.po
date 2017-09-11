@@ -34,11 +34,11 @@ msgstr "全方便付款(AIO) Checkout Server 網址"
 
 #: ./browser/allpaySetting.py:121
 msgid "Allpay Setting"
-msgstr "歐付寶設定"
+msgstr "綠界設定"
 
 #: ./profiles/default/controlpanel.xml
 msgid "Allpay setup"
-msgstr "歐付寶設定"
+msgstr "綠界設定"
 
 #: ./interfaces.py:113
 msgid "Amount"

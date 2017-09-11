@@ -191,21 +191,35 @@ class Checkout(BrowserView):
         alsoProvides(request, IDisableCSRFProtection)
 
         prefixString = self.prefixString
-        itemInCart = request.cookies.get('itemInCart', '')
+#TODO: 要分離開，這個 itemInCart 要寫到外面去
+
+        itemInCart = request.cookies.get('cart', '')
+#        itemInCart = request.cookies.get('itemInCart', '')
+        if not itemInCart:
+            response.redirect(portal.absolute_url())
+
         itemInCart = json.loads(itemInCart)
         # 檢查收件地址
+#先不用檢查了
+        """ 先不用檢查了
         if request.form.get('LogisticsType') == 'home' and not request.form.get('address'):
             api.portal.show_message(message=_(u'Please fill full address information'), request=request, type='error')
             response.redirect('%s/@@checkout_confirm' % portal.absolute_url())
             return
+        """
 
         if api.user.is_anonymous():
             profile = None
         else:
             currentId = api.user.get_current().getId()
-            profile = portal['members'][currentId]
+#改不要依賴profile            profile = portal['members'][currentId]
 
-        brain = catalog({'UID':itemInCart.keys()})
+#        import pdb; pdb.set_trace()
+        itemUIDs = []
+        for item in itemInCart:
+            itemUIDs.append(item.keys()[0])
+
+        brain = catalog({'UID':itemUIDs})
         totalAmount = 0
         itemName = ''
         itemDescription = ''
@@ -214,48 +228,19 @@ class Checkout(BrowserView):
         discount = 0
         specialDiscount = 0 # 未來促銷活動可用
 
-        for item in brain:
-            qty = itemInCart.get(item.UID, 1)
-            totalAmount += item.salePrice * qty
-            itemName += '%s $%s X %s#' % (item.Title, item.salePrice, qty)
-            itemDescription += '%s: $%s X %s || ' % (item.Title, item.salePrice, qty)
+        for item in itemInCart:
+            item_uid = item.keys()[0]
+            totalAmount += int(item.values()[0]['total'])
+            qty = item.values()[0]['qty']
+            unitPrice = item.values()[0]['price']
+            itemTitle = catalog(UID=item_uid)[0].Title
+#            import pdb;pdb.set_trace()
+            itemName += '%s $%s X %s#' % (itemTitle, str(unitPrice), str(qty))
 
-#            shippingFee += item.standardShippingCost # 同品項只收一次運費(ex, item_1, qty=3, 運費也只收一筆)
-            shippingFee = 0 # 目前全館免運費
-            if not api.user.is_anonymous():
-                discount += int(item.salePrice * item.maxUsedBonus) * int(request.cookies.get(item.UID, 1))
-
-        totalAmount += shippingFee
-
-        if profile:
-            if request.form.get('usingbonus', 'n') == 'n':
-                discount = 0
-            if discount > profile.bonus:
-                discount = profile.bonus
-            totalAmount -= discount
-
-            # 折抵 Special Discount
-            totalAmount -= specialDiscount
-
-            itemName += 'shipping Fee: %s, discount: %s' % (shippingFee, discount)
-            itemDescription += 'shipping Fee: %s, discount: %s' % (shippingFee, discount)
-
-            # Special Discount資訊
-            if specialDiscount > 0:
-                itemName += ', Special Discount: %s' % (specialDiscount)
-                itemDescription += ', Special Discount: %s' % (specialDiscount)
-        else:
-            itemName += 'shipping Fee: %s' % (shippingFee)
-            itemDescription += 'shipping Fee: %s' % (shippingFee)
-
-            # 折抵 Special Discount
-            totalAmount -= specialDiscount
-            # Special Discount資訊
-            if specialDiscount > 0:
-                itemName += ', Special Discount: %s' % (specialDiscount)
-                itemDescription += ', Special Discount: %s' % (specialDiscount)
+#        import pdb; pdb.set_trace()
 
         merchantTradeNo = '%ss%s' % (DateTime().strftime('%Y%m%d%H%M%S'), random.randint(1000,9999))
+        """ order會用mysql作
         with api.env.adopt_roles(['Manager']):
             order = api.content.create(
                 type='Order',
@@ -275,11 +260,13 @@ class Checkout(BrowserView):
                 invoiceTitle = request.form.get('invoice_title', ''),
                 container=portal['resource']['order'],
             )
-
+        """
+        """ 沒有profile
             if profile:
                 profile.bonus -= discount
             else:
                 api.content.transition(obj=order, transition='publish')
+        """
 
 
         paymentInfoURL = api.portal.get_registry_record('%s.paymentInfoURL' % prefixString)
