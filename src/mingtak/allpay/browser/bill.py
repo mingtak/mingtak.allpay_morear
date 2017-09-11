@@ -18,6 +18,14 @@ import hashlib
 import urllib
 from Products.CMFPlone.utils import safe_unicode
 
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+
+
+BASEMODEL = declarative_base()
+# create_engine 內的字串，之後要改到 registry 讀取
+ENGINE = create_engine('mysql+mysqldb://morear:morear@localhost/morear?charset=utf8', echo=True)
+
 
 class ReturnUrl(BrowserView):
     """ Return URL
@@ -190,6 +198,10 @@ class Checkout(BrowserView):
         portal = api.portal.get()
         alsoProvides(request, IDisableCSRFProtection)
 
+        if api.user.is_anonymous():
+            request.response.redirect(portal.absolute_url())
+            return
+
         prefixString = self.prefixString
 #TODO: 要分離開，這個 itemInCart 要寫到外面去
 
@@ -199,20 +211,11 @@ class Checkout(BrowserView):
             response.redirect(portal.absolute_url())
 
         itemInCart = json.loads(itemInCart)
-        # 檢查收件地址
-#先不用檢查了
-        """ 先不用檢查了
-        if request.form.get('LogisticsType') == 'home' and not request.form.get('address'):
-            api.portal.show_message(message=_(u'Please fill full address information'), request=request, type='error')
-            response.redirect('%s/@@checkout_confirm' % portal.absolute_url())
-            return
-        """
 
         if api.user.is_anonymous():
             profile = None
         else:
-            currentId = api.user.get_current().getId()
-#改不要依賴profile            profile = portal['members'][currentId]
+            userId = api.user.get_current().getId()
 
 #        import pdb; pdb.set_trace()
         itemUIDs = []
@@ -237,9 +240,74 @@ class Checkout(BrowserView):
 #            import pdb;pdb.set_trace()
             itemName += '%s $%s X %s#' % (itemTitle, str(unitPrice), str(qty))
 
+        orderInfo = request.form
+        orderId = '%ss%s' % (DateTime().strftime('%Y%m%d%H%M%S'), random.randint(100,999))
+        merchantTradeNo = orderId
+        pickupType = 'onStore' if orderInfo['on_store'] else 'onDoor'
+
+        if orderInfo['allday'] or ( orderInfo['morning'] and orderInfo['afternoon'] ):
+            pickupTime = 'allday'
+        else:
+            pickupTime = 'morning' if orderInfo['morning'] else 'afternoon'
+
+        pickupStoreUID = orderInfo.get('selected_store', 'null')
+        b_name = orderInfo.get('buyerName', 'null')
+        b_email = orderInfo.get('buyerEmail', 'null')
+        b_phone = orderInfo.get('buyerPhone', 'null')
+        b_city = orderInfo.get('buyerCity', 'null')
+        b_addr = orderInfo.get('buyerAddr', 'null')
+
+        r_name = orderInfo.get('receiverName', 'null')
+        r_email = orderInfo.get('receiverEmail', 'null')
+        r_phone = orderInfo.get('receiverPhone', 'null')
+        r_city = orderInfo.get('receiverCity', 'null')
+        r_addr = orderInfo.get('receiverAddr', 'null')
+
+        i_2list = 1 if orderInfo.get('invoice2List') else 0
+        i_invoiceNo = orderInfo.get('invoiceNo', 'null')
+        i_invoiceTitle = orderInfo.get('invoiceTitle', 'null')
+        i_city = orderInfo.get('invoiceCity', 'null')
+        i_addr = orderInfo.get('invoiceAddr', 'null')
+        conn = ENGINE.connect()
+
+        # 建立訂單
+        execStr = "INSERT INTO orderInfo(\
+                       userId, orderId, pickupType, pickupTime, pickupStoreUID,\
+                       b_name, b_email, b_phone, b_city, b_addr,\
+                       r_name, r_email, r_phone, r_city, r_addr,\
+                       i_2list, i_invoiceNo, i_invoiceTitle, i_city, i_addr)\
+                   VALUES (\
+                       '%s', '%s', '%s', '%s', '%s',\
+                       '%s', '%s', '%s', '%s', '%s',\
+                       '%s', '%s', '%s', '%s', '%s',\
+                       %s, '%s', '%s', '%s', '%s');" %\
+                     ( userId, orderId, pickupType, pickupTime, pickupStoreUID,\
+                       b_name, b_email, b_phone, b_city, b_addr,\
+                       r_name, r_email, r_phone, r_city, r_addr,\
+                       i_2list, i_invoiceNo, i_invoiceTitle, i_city, i_addr )
+
+        conn.execute(execStr)
 #        import pdb; pdb.set_trace()
 
-        merchantTradeNo = '%ss%s' % (DateTime().strftime('%Y%m%d%H%M%S'), random.randint(1000,9999))
+# 建立訂單內容品項, itemId 先保留不處理，待跟客戶確認訂單產品編號
+        execStr = "INSERT INTO orderItem(orderId, p_UID, qty, unitPrice, parameterNo) VALUES"
+        for item in itemInCart:
+            uid = item.keys()[0]
+            execStr += "( '%s', '%s', %s, %s, %s)," % (\
+                orderId,
+                uid,
+                int(item[uid].get('qty', 1)),
+                int(item[uid].get('price', 9999999)),
+                int(item[uid].get('parameterNo', 0)),
+            )
+
+        execStr = execStr[:-1]
+        conn.execute(execStr)
+#        import pdb; pdb.set_trace()
+        conn.close()
+
+#        merchantTradeNo = '%ss%s' % (DateTime().strftime('%Y%m%d%H%M%S'), random.randint(1000,9999))
+
         """ order會用mysql作
         with api.env.adopt_roles(['Manager']):
             order = api.content.create(
@@ -261,14 +329,6 @@ class Checkout(BrowserView):
                 container=portal['resource']['order'],
             )
         """
-        """ 沒有profile
-            if profile:
-                profile.bonus -= discount
-            else:
-                api.content.transition(obj=order, transition='publish')
-        """
-
-
         paymentInfoURL = api.portal.get_registry_record('%s.paymentInfoURL' % prefixString)
         clientBackURL = api.portal.get_registry_record('%s.clientBackURL' % prefixString)
         payment_info = {
@@ -281,7 +341,9 @@ class Checkout(BrowserView):
             'EncryptType': 1,
             'PaymentInfoURL': paymentInfoURL,
             'ClientBackURL': '%s?MerchantTradeNo=%s&LogisticsType=%s&LogisticsSubType=%s' %
-                (clientBackURL, merchantTradeNo, request.form.get('LogisticsType', 'cvs'), request.form.get('LogisticsSubType', 'UNIMART')),  #可以使用 get 帶參數
+                (clientBackURL, merchantTradeNo,
+                 request.form.get('LogisticsType', 'cvs'),
+                 request.form.get('LogisticsSubType', 'UNIMART')),  #可以使用 get 帶參數
             'ReturnURL': api.portal.get_registry_record('%s.returnURL' % prefixString),
             'MerchantTradeDate': DateTime().strftime('%Y/%m/%d %H:%M:%S'),
             'MerchantID': api.portal.get_registry_record('%s.merchantID' % prefixString),
