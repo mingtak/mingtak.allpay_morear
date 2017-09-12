@@ -38,7 +38,23 @@ class ReturnUrl(BrowserView):
         catalog = context.portal_catalog
         alsoProvides(request, IDisableCSRFProtection)
 
-        itemInCart = request.cookies.get('itemInCart', '{}')
+        TradeNo = request.form.get('TradeNo')
+        MerchantTradeNo = request.form.get('MerchantTradeNo')
+
+        if not ( TradeNo and MerchantTradeNo ):
+            return
+
+        conn = ENGINE.connect()
+
+        execStr = "UPDATE orderInfo SET ecpayNo = '%s' WHERE orderId = '%s'" % (TradeNo, MerchantTradeNo)
+        conn.execute(execStr)
+
+        conn.close()
+
+#        itemInCart = request.cookies.get('cart', '{}')
+
+        return '1|OK'
+        import pdb; pdb.set_trace()
 
         with api.env.adopt_user(username="admin"):
             if not request.form['MerchantTradeNo']:
@@ -68,6 +84,10 @@ class ClientBackUrl(BrowserView):
         response = request.response
         catalog = context.portal_catalog
         portal = api.portal.get()
+
+        if api.user.is_anonymous():
+            request.response.redirect(portal.absolute_url())
+            return
 
 #        response.setCookie('itemInCart', '{}')
 #        response.redirect('/logistics_map?MerchantTradeNo=%s' % request.form['MerchantTradeNo'])
@@ -287,18 +307,18 @@ class Checkout(BrowserView):
                        i_2list, i_invoiceNo, i_invoiceTitle, i_city, i_addr )
 
         conn.execute(execStr)
-#        import pdb; pdb.set_trace()
 
 # 建立訂單內容品項, itemId 先保留不處理，待跟客戶確認訂單產品編號
         execStr = "INSERT INTO orderItem(orderId, p_UID, qty, unitPrice, parameterNo) VALUES"
         for item in itemInCart:
             uid = item.keys()[0]
+#            import pdb; pdb.set_trace()
             execStr += "( '%s', '%s', %s, %s, %s)," % (\
                 orderId,
                 uid,
                 int(item[uid].get('qty', 1)),
                 int(item[uid].get('price', 9999999)),
-                int(item[uid].get('parameterNo', 0)),
+                int(item[uid].get('parameter', 0)),
             )
 
         execStr = execStr[:-1]
@@ -308,27 +328,6 @@ class Checkout(BrowserView):
 
 #        merchantTradeNo = '%ss%s' % (DateTime().strftime('%Y%m%d%H%M%S'), random.randint(1000,9999))
 
-        """ order會用mysql作
-        with api.env.adopt_roles(['Manager']):
-            order = api.content.create(
-                type='Order',
-                title=merchantTradeNo,
-                description = '%s, Total: $%s' % (itemDescription, totalAmount),
-                productUIDs = itemInCart,
-                amount = totalAmount,
-                receiver = request.form.get('receiver', ''),
-                phone = request.form.get('phone', ''),
-                cellPhone = request.form.get('cellphone', ''),
-                email = request.form.get('email',''),
-                addr_city = request.form.get('city', ''),
-                addr_district = request.form.get('district', ''),
-                addr_zip = request.form.get('zipcode', ''),
-                addr_address = request.form.get('address', ''),
-                taxId = request.form.get('taxid', ''),
-                invoiceTitle = request.form.get('invoice_title', ''),
-                container=portal['resource']['order'],
-            )
-        """
         paymentInfoURL = api.portal.get_registry_record('%s.paymentInfoURL' % prefixString)
         clientBackURL = api.portal.get_registry_record('%s.clientBackURL' % prefixString)
         payment_info = {
@@ -340,10 +339,11 @@ class Checkout(BrowserView):
             'PaymentType': 'aio',
             'EncryptType': 1,
             'PaymentInfoURL': paymentInfoURL,
-            'ClientBackURL': '%s?MerchantTradeNo=%s&LogisticsType=%s&LogisticsSubType=%s' %
+            'ClientBackURL': '%s?MerchantTradeNo=%s&LogisticsType=%s&LogisticsSubType=%s&orderId=%s' %
                 (clientBackURL, merchantTradeNo,
                  request.form.get('LogisticsType', 'cvs'),
-                 request.form.get('LogisticsSubType', 'UNIMART')),  #可以使用 get 帶參數
+                 request.form.get('LogisticsSubType', 'UNIMART'),
+                 orderId),  #可以使用 get 帶參數
             'ReturnURL': api.portal.get_registry_record('%s.returnURL' % prefixString),
             'MerchantTradeDate': DateTime().strftime('%Y/%m/%d %H:%M:%S'),
             'MerchantID': api.portal.get_registry_record('%s.merchantID' % prefixString),
