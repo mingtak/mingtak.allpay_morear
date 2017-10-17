@@ -263,12 +263,20 @@ class Checkout(BrowserView):
         orderInfo = request.form
         orderId = '%ss%s' % (DateTime().strftime('%Y%m%d%H%M%S'), random.randint(100,999))
         merchantTradeNo = orderId
-        pickupType = 'onStore' if orderInfo['on_store'] else 'onDoor'
 
-        if orderInfo['allday'] or ( orderInfo['morning'] and orderInfo['afternoon'] ):
-            pickupTime = 'allday'
+        if orderInfo['on_store'] == 'true':
+            pickupType = 'onStore'
+        elif orderInfo['on_door'] == 'true':
+            pickupType = 'onDoor'
         else:
-            pickupTime = 'morning' if orderInfo['morning'] else 'afternoon'
+            pickupType = 'onPartner'
+
+        if orderInfo['afternoon'] == 'true':
+            pickupTime = 'afternoon'
+        elif orderInfo['morning'] == 'true':
+            pickupTime = 'morning'
+        else:
+            pickupTime = 'allday'
 
         pickupStoreUID = orderInfo.get('selected_store', 'null')
         b_name = orderInfo.get('buyerName', 'null')
@@ -291,34 +299,58 @@ class Checkout(BrowserView):
         conn = ENGINE.connect()
 
         # 建立訂單
+        createDate = DateTime().strftime('%Y/%m/%d %H:%M:%S')
         execStr = "INSERT INTO orderInfo(\
-                       userId, orderId, pickupType, pickupTime, pickupStoreUID,\
+                       userId, orderId, pickupType, pickupTime, pickupStoreUID, createDate,\
                        b_name, b_email, b_phone, b_city, b_addr,\
                        r_name, r_email, r_phone, r_city, r_addr,\
                        i_2list, i_invoiceNo, i_invoiceTitle, i_city, i_addr)\
                    VALUES (\
-                       '%s', '%s', '%s', '%s', '%s',\
+                       '%s', '%s', '%s', '%s', '%s', '%s',\
                        '%s', '%s', '%s', '%s', '%s',\
                        '%s', '%s', '%s', '%s', '%s',\
                        %s, '%s', '%s', '%s', '%s');" %\
-                     ( userId, orderId, pickupType, pickupTime, pickupStoreUID,\
+                     ( userId, orderId, pickupType, pickupTime, pickupStoreUID, createDate,\
                        b_name, b_email, b_phone, b_city, b_addr,\
                        r_name, r_email, r_phone, r_city, r_addr,\
                        i_2list, i_invoiceNo, i_invoiceTitle, i_city, i_addr )
-
+#        import pdb; pdb.set_trace()
         conn.execute(execStr)
 
+
 # 建立訂單內容品項, itemId 先保留不處理，待跟客戶確認訂單產品編號
-        execStr = "INSERT INTO orderItem(orderId, p_UID, qty, unitPrice, parameterNo) VALUES"
+        execStr = "INSERT INTO orderItem(orderId, p_UID, qty, unitPrice, parameterNo, sNumber) VALUES"
         for item in itemInCart:
             uid = item.keys()[0]
+            itemQty = int(item[uid].get('qty', 1))
+            ProdObj = api.content.find(UID=uid)[0]
+            snPrefix = ProdObj.getObject().snPrefix
+            snDate = DateTime().strftime('%y%m%d')
+            sNumberPrefix = '%s%s' % (snPrefix, snDate)
 #            import pdb; pdb.set_trace()
-            execStr += "( '%s', '%s', %s, %s, %s)," % (\
+            exec_find_sNumber_Str = "SELECT id, qty FROM `orderItem` WHERE sNumber like '%%%%%s%%%%'" % sNumberPrefix # % 要改用 %%
+
+            snAmount = 0
+            for tmp in conn.execute(exec_find_sNumber_Str).fetchall():
+                snAmount += tmp[1]
+
+            sNumber = []
+            for number in range(snAmount+1, snAmount+1+itemQty):
+                if sNumberPrefix.startswith('None'):
+                    break
+                formatNo = '0%s' % (number) if number < 10 else str(number)
+                sNumber.append('%s%s' % (sNumberPrefix, formatNo))
+
+#            import pdb; pdb.set_trace()
+
+            execStr += "( '%s', '%s', %s, %s, %s, '%s')," % (\
                 orderId,
                 uid,
-                int(item[uid].get('qty', 1)),
+                itemQty,
+#                int(item[uid].get('qty', 1)),
                 int(item[uid].get('price', 9999999)),
                 int(item[uid].get('parameter', 0)),
+                json.dumps(sNumber),
             )
 
         execStr = execStr[:-1]
@@ -336,6 +368,7 @@ class Checkout(BrowserView):
             'TradeDesc': '%s, Total: $%s' % (itemDescription, totalAmount),
             'TotalAmount': totalAmount,
             'ChoosePayment': 'ALL',
+            'IgnorePayment': 'AndroidPay#CVS#BARCODE',
             'PaymentType': 'aio',
             'EncryptType': 1,
             'PaymentInfoURL': paymentInfoURL,
