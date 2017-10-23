@@ -317,10 +317,16 @@ class Checkout(BrowserView):
 #        import pdb; pdb.set_trace()
         conn.execute(execStr)
 
+        # Insert record to orderState
+        execStr = "INSERT INTO orderState(orderId, stateLog) \
+                   VALUE ( '%s', '%s: 建立訂單\n')" % \
+                   (orderId, DateTime().strftime('%c'))
+        conn.execute(execStr)
 
 # 建立訂單內容品項, itemId 先保留不處理，待跟客戶確認訂單產品編號
-        execStr = "INSERT INTO orderItem(orderId, p_UID, qty, unitPrice, parameterNo, sNumber) VALUES"
+#        execStr = "INSERT INTO orderItem(orderId, p_UID, qty, unitPrice, parameterNo, sNumber) VALUES"
         for item in itemInCart:
+            execStr = "INSERT INTO orderItem(orderId, p_UID, qty, unitPrice, parameterNo, sNumber) VALUES"
             uid = item.keys()[0]
             itemQty = int(item[uid].get('qty', 1))
             ProdObj = api.content.find(UID=uid)[0]
@@ -353,8 +359,8 @@ class Checkout(BrowserView):
                 json.dumps(sNumber),
             )
 
-        execStr = execStr[:-1]
-        conn.execute(execStr)
+            execStr = execStr[:-1]
+            conn.execute(execStr)
 #        import pdb; pdb.set_trace()
         conn.close()
 
