@@ -27,6 +27,64 @@ BASEMODEL = declarative_base()
 ENGINE = create_engine('mysql+mysqldb://morear:morear@localhost/morear?charset=utf8', echo=True)
 
 
+class PaymentInfoUrl(BrowserView):
+    """ Payment Info URL
+    """
+    prefixString = 'mingtak.allpay.browser.allpaySetting.IAllpaySetting'
+
+    def getCheckMacValue(self, payment_info):
+        prefixString = self.prefixString
+
+        hashKey = api.portal.get_registry_record('%s.checkoutHashKey' % prefixString)
+        hashIv = api.portal.get_registry_record('%s.checkoutHashIV' % prefixString)
+
+        sortedString = ''
+        for k, v in sorted(payment_info.items()):
+            sortedString += '%s=%s&' % (k, str(v))
+
+        sortedString = 'HashKey=%s&%sHashIV=%s' % (str(hashKey), sortedString, str(hashIv))
+        sortedString = urllib.quote_plus(sortedString).lower()
+        checkMacValue = hashlib.sha256(sortedString).hexdigest()
+        checkMacValue = checkMacValue.upper()
+        return checkMacValue
+
+    def __call__(self):
+        context = self.context
+        request = self.request
+        response = request.response
+        catalog = context.portal_catalog
+        alsoProvides(request, IDisableCSRFProtection)
+
+        prefixString = self.prefixString
+
+        # 檢核
+        CheckMacValue = self.request.form.pop('CheckMacValue')
+        if CheckMacValue != self.getCheckMacValue(self.request.form):
+            return
+
+        TradeNo = request.form.get('TradeNo')
+        orderId = request.form.get('MerchantTradeNo')
+        conn = ENGINE.connect()
+        # 關連綠界訂單編號與網站訂單編號
+        execStr = "UPDATE orderInfo SET ecpayNo = '%s' WHERE orderId = '%s'" % (TradeNo, orderId)
+        conn.execute(execStr)
+
+        # ATM 取號資訊
+        if request.form.get('RtnCode') == '2':
+            PaymentType = request.form.get('PaymentType')
+            BankCode = request.form.get('BankCode')
+            vAccount = request.form.get('vAccount')
+            TradeAmt = request.form.get('TradeAmt')
+            ExpireDate = request.form.get('ExpireDate')
+            execStr = "INSERT INTO paymentInfo(orderId, PaymentType, BankCode, vAccount, TradeAmt, ExpireDate)\
+                       VALUES ('%s', '%s', '%s', '%s', '%s', '%s');" %\
+                       (orderId, PaymentType, BankCode, vAccount, TradeAmt, ExpireDate)
+            conn.execute(execStr)
+        conn.close()
+
+#        itemInCart = request.cookies.get('cart', '{}')
+
+
 class ReturnUrl(BrowserView):
     """ Return URL
     """

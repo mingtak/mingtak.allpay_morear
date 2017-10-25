@@ -77,7 +77,6 @@
       permission="zope2.View"
       />
 
-  /* return_url, payment_info_url, 用同樣的code */
   <browser:page
       name="return_url"
       for="*"
@@ -88,7 +87,7 @@
   <browser:page
       name="payment_info_url"
       for="*"
-      class=".bill.ReturnUrl"
+      class=".bill.PaymentInfoUrl"
       permission="zope2.View"
       />
 
