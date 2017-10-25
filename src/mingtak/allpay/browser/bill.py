@@ -30,6 +30,23 @@ ENGINE = create_engine('mysql+mysqldb://morear:morear@localhost/morear?charset=u
 class ReturnUrl(BrowserView):
     """ Return URL
     """
+    prefixString = 'mingtak.allpay.browser.allpaySetting.IAllpaySetting'
+
+    def getCheckMacValue(self, payment_info):
+        prefixString = self.prefixString
+
+        hashKey = api.portal.get_registry_record('%s.checkoutHashKey' % prefixString)
+        hashIv = api.portal.get_registry_record('%s.checkoutHashIV' % prefixString)
+
+        sortedString = ''
+        for k, v in sorted(payment_info.items()):
+            sortedString += '%s=%s&' % (k, str(v))
+
+        sortedString = 'HashKey=%s&%sHashIV=%s' % (str(hashKey), sortedString, str(hashIv))
+        sortedString = urllib.quote_plus(sortedString).lower()
+        checkMacValue = hashlib.sha256(sortedString).hexdigest()
+        checkMacValue = checkMacValue.upper()
+        return checkMacValue
 
     def __call__(self):
         context = self.context
@@ -38,22 +55,36 @@ class ReturnUrl(BrowserView):
         catalog = context.portal_catalog
         alsoProvides(request, IDisableCSRFProtection)
 
-        TradeNo = request.form.get('TradeNo')
-        MerchantTradeNo = request.form.get('MerchantTradeNo')
+        prefixString = self.prefixString
 
-        if not ( TradeNo and MerchantTradeNo ):
+        # 檢核
+        CheckMacValue = self.request.form.pop('CheckMacValue')
+        if CheckMacValue != self.getCheckMacValue(self.request.form):
             return
 
-        conn = ENGINE.connect()
+        MerchantID = request.form.get('MerchantID') # 特店編號
+        TradeNo = request.form.get('TradeNo') # 綠界訂單編號
+        MerchantTradeNo = request.form.get('MerchantTradeNo') # 網站訂單編號
+        RtnCode = request.form.get('RtnCode') # 付款成功為 '1'，其餘皆未完成付款
 
+        conn = ENGINE.connect()
+        # 關連綠界訂單編號與網站訂單編號
         execStr = "UPDATE orderInfo SET ecpayNo = '%s' WHERE orderId = '%s'" % (TradeNo, MerchantTradeNo)
         conn.execute(execStr)
-
+        if RtnCode == '1':
+            execStr = "SELECT * FROM orderState WHERE orderId = '%s'" % MerchantTradeNo
+            logStr = conn.execute(execStr).fetchall()[0]['stateLog']
+            logStr += u'%s: 綠界通知付款成功\n' % DateTime().strftime('%c')
+            execStr = u"UPDATE orderState SET stateCode = 2, stateLog = '%s' WHERE orderId = '%s'" %\
+                      (logStr, MerchantTradeNo)
+            conn.execute(execStr)
         conn.close()
 
 #        itemInCart = request.cookies.get('cart', '{}')
 
         return '1|OK'
+
+#以下程式碼暫時廢棄
         import pdb; pdb.set_trace()
 
         with api.env.adopt_user(username="admin"):
@@ -322,6 +353,7 @@ class Checkout(BrowserView):
                    VALUE ( '%s', '%s: 建立訂單\n')" % \
                    (orderId, DateTime().strftime('%c'))
         conn.execute(execStr)
+        response.setCookie('cart', '[]')
 
 # 建立訂單內容品項, itemId 先保留不處理，待跟客戶確認訂單產品編號
 #        execStr = "INSERT INTO orderItem(orderId, p_UID, qty, unitPrice, parameterNo, sNumber) VALUES"
