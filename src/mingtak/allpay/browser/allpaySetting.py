@@ -56,47 +56,55 @@ class IAllpaySetting(Form.Schema):
     """ Checkout(cash flow) setting for AllPay """
 
     """ Logistics setting for AllPay """
+    Form.mode(logisticsMapURL='hidden')
     logisticsMapURL = schema.TextLine(
         title=_(u"Logistics Map URL"),
         description=_(u"Logistics map url"),
         required=True,
     )
 
+    Form.mode(logisticsExpressCreateURL='hidden')
     logisticsExpressCreateURL = schema.TextLine(
         title=_(u"Logistics Express Create URL"),
         description=_("Logistics express create url."),
     )
 
+    Form.mode(logisticsHashKey='hidden')
     logisticsHashKey = schema.TextLine(
         title=_(u"Logistics Hash Key"),
         description=_(u"Logistics HashKey, for allPay"),
         required=True,
     )
 
+    Form.mode(logisticsHashIV='hidden')
     logisticsHashIV = schema.TextLine(
         title=_(u"Logistics Hash IV"),
         description=_(u"Logistics Hash IV, for allPay"),
         required=True,
     )
 
+    Form.mode(serverReplyURL='hidden')
     serverReplyURL = schema.TextLine(
         title=_(u"Server Reply URL, for MAP"),
         description=_(u"ServerReplyURL, for allPay's logistics"),
         required=True,
     )
 
+    Form.mode(serverReplyURL_Express='hidden')
     serverReplyURL_Express = schema.TextLine(
         title=_(u"Server Reply URL, for Express Create"),
         description=_(u"ServerReplyURL, for allPay's logistics"),
         required=True,
     )
 
+    Form.mode(clientReplyURL='hidden')
     clientReplyURL = schema.TextLine(
         title=_(u"Client Reply URL"),
         description=_(u"ClientReplyURL, for allPay's logistics"),
         required=True,
     )
 
+    Form.mode(logisticsC2CReplyURL='hidden')
     logisticsC2CReplyURL = schema.TextLine(
         title=_(u"Logistics C2C Reply URL"),
         description=_(u"Logistics C2C Reply URL, for allPay's logistics"),
@@ -105,6 +113,7 @@ class IAllpaySetting(Form.Schema):
 
     """ Logistics setting for AllPay """
 
+    Form.mode(initialBonus='hidden')
     initialBonus = schema.Int(
         title=_(u"Initial Bonus Setting"),
         description=_(u"Initial Bonus Setting"),

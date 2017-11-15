@@ -2,13 +2,11 @@
 from mingtak.allpay import _
 from Products.Five.browser import BrowserView
 from Products.Five.browser.pagetemplatefile import ViewPageTemplateFile
-#from zope.component import getMultiAdapter
 from z3c.relationfield.relation import RelationValue
 from zope.event import notify
 from plone.protect.interfaces import IDisableCSRFProtection
 from zope.interface import alsoProvides
 from plone import api
-#from pyallpay import AllPay
 from DateTime import DateTime
 import random
 import transaction
@@ -20,11 +18,10 @@ from Products.CMFPlone.utils import safe_unicode
 
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
-
+from mingtak.allpay import DBSTR
 
 BASEMODEL = declarative_base()
-# create_engine 內的字串，之後要改到 registry 讀取
-ENGINE = create_engine('mysql+mysqldb://morear:morear@localhost/morear?charset=utf8', echo=True)
+ENGINE = create_engine(DBSTR, echo=True)
 
 
 class PaymentInfoUrl(BrowserView):
@@ -82,8 +79,6 @@ class PaymentInfoUrl(BrowserView):
             conn.execute(execStr)
         conn.close()
 
-#        itemInCart = request.cookies.get('cart', '{}')
-
 
 class ReturnUrl(BrowserView):
     """ Return URL
@@ -138,28 +133,7 @@ class ReturnUrl(BrowserView):
             conn.execute(execStr)
         conn.close()
 
-#        itemInCart = request.cookies.get('cart', '{}')
-
         return '1|OK'
-
-#以下程式碼暫時廢棄
-        import pdb; pdb.set_trace()
-
-        with api.env.adopt_user(username="admin"):
-            if not request.form['MerchantTradeNo']:
-                return
-            try:
-                order = catalog({'Type':'Order', 'Title':request.form['MerchantTradeNo']})[0].getObject()
-            except:
-                return
-
-            if not order.result:
-                order.result = {}
-
-            for key in request.form.keys():
-                order.result[key] = request.form[key]
-
-            return
 
 
 class ClientBackUrl(BrowserView):
@@ -177,9 +151,6 @@ class ClientBackUrl(BrowserView):
         if api.user.is_anonymous():
             request.response.redirect(portal.absolute_url())
             return
-
-#        response.setCookie('itemInCart', '{}')
-#        response.redirect('/logistics_map?MerchantTradeNo=%s' % request.form['MerchantTradeNo'])
 
         self.order = catalog({'Type':'Order', 'id':request.form['MerchantTradeNo']})[0]
         self.products = catalog({'Type':'Product', 'UID':self.order.productUIDs.keys()})
@@ -239,8 +210,6 @@ class CheckoutConfirm(BrowserView):
 
         if api.user.is_anonymous():
             self.profile = None
-#            response.redirect('/')
-#            return
         else:
             currentId = api.user.get_current().getId()
             self.profile = portal['members'][currentId]
@@ -268,13 +237,9 @@ class CheckoutConfirm(BrowserView):
 
         self.payable = self.totalAmount
         self.payable += self.shippingFee
-        # 尚未減 discount , 放在 view 顯示
 
         return self.template()
 
-# 會用到的先寫下來
-#from hashlib import sha256
-#from urllib import quote_plus
 
 class Checkout(BrowserView):
     """ Checkout
@@ -312,10 +277,8 @@ class Checkout(BrowserView):
             return
 
         prefixString = self.prefixString
-#TODO: 要分離開，這個 itemInCart 要寫到外面去
 
         itemInCart = request.cookies.get('cart', '')
-#        itemInCart = request.cookies.get('itemInCart', '')
         if not itemInCart:
             response.redirect(portal.absolute_url())
 
@@ -326,7 +289,6 @@ class Checkout(BrowserView):
         else:
             userId = api.user.get_current().getId()
 
-#        import pdb; pdb.set_trace()
         itemUIDs = []
         for item in itemInCart:
             itemUIDs.append(item.keys()[0])
@@ -335,7 +297,6 @@ class Checkout(BrowserView):
         totalAmount = 0
         itemName = ''
         itemDescription = ''
-#        productUIDs = {}
         shippingFee = 0
         discount = 0
         specialDiscount = 0 # 未來促銷活動可用
@@ -346,7 +307,6 @@ class Checkout(BrowserView):
             qty = item.values()[0]['qty']
             unitPrice = item.values()[0]['price']
             itemTitle = catalog(UID=item_uid)[0].Title
-#            import pdb;pdb.set_trace()
             itemName += '%s $%s X %s#' % (itemTitle, str(unitPrice), str(qty))
 
         orderInfo = request.form
@@ -403,18 +363,14 @@ class Checkout(BrowserView):
                        b_name, b_email, b_phone, b_city, b_addr,\
                        r_name, r_email, r_phone, r_city, r_addr,\
                        i_2list, i_invoiceNo, i_invoiceTitle, i_city, i_addr )
-#        import pdb; pdb.set_trace()
         conn.execute(execStr)
 
-        # Insert record to orderState
         execStr = "INSERT INTO orderState(orderId, stateLog) \
                    VALUE ( '%s', '%s: 建立訂單\n')" % \
                    (orderId, DateTime().strftime('%c'))
         conn.execute(execStr)
         response.setCookie('cart', '[]')
 
-# 建立訂單內容品項, itemId 先保留不處理，待跟客戶確認訂單產品編號
-#        execStr = "INSERT INTO orderItem(orderId, p_UID, qty, unitPrice, parameterNo, sNumber) VALUES"
         for item in itemInCart:
             execStr = "INSERT INTO orderItem(orderId, p_UID, qty, unitPrice, parameterNo, sNumber) VALUES"
             uid = item.keys()[0]
@@ -423,7 +379,6 @@ class Checkout(BrowserView):
             snPrefix = ProdObj.getObject().snPrefix
             snDate = DateTime().strftime('%y%m%d')
             sNumberPrefix = '%s%s' % (snPrefix, snDate)
-#            import pdb; pdb.set_trace()
             exec_find_sNumber_Str = "SELECT id, qty FROM `orderItem` WHERE sNumber like '%%%%%s%%%%'" % sNumberPrefix # % 要改用 %%
 
             snAmount = 0
@@ -437,13 +392,10 @@ class Checkout(BrowserView):
                 formatNo = '0%s' % (number) if number < 10 else str(number)
                 sNumber.append('%s%s' % (sNumberPrefix, formatNo))
 
-#            import pdb; pdb.set_trace()
-
             execStr += "( '%s', '%s', %s, %s, %s, '%s')," % (\
                 orderId,
                 uid,
                 itemQty,
-#                int(item[uid].get('qty', 1)),
                 int(item[uid].get('price', 9999999)),
                 int(item[uid].get('parameter', 0)),
                 json.dumps(sNumber),
@@ -451,10 +403,7 @@ class Checkout(BrowserView):
 
             execStr = execStr[:-1]
             conn.execute(execStr)
-#        import pdb; pdb.set_trace()
         conn.close()
-
-#        merchantTradeNo = '%ss%s' % (DateTime().strftime('%Y%m%d%H%M%S'), random.randint(1000,9999))
 
         paymentInfoURL = api.portal.get_registry_record('%s.paymentInfoURL' % prefixString)
         clientBackURL = api.portal.get_registry_record('%s.clientBackURL' % prefixString)
@@ -464,7 +413,7 @@ class Checkout(BrowserView):
             'TradeDesc': '%s, Total: $%s' % (itemDescription, totalAmount),
             'TotalAmount': totalAmount,
             'ChoosePayment': 'ALL',
-            'IgnorePayment': 'AndroidPay#CVS#BARCODE',
+            'IgnorePayment': 'AndroidPay#CVS#BARCODE#WebATM',
             'PaymentType': 'aio',
             'EncryptType': 1,
             'PaymentInfoURL': paymentInfoURL,
